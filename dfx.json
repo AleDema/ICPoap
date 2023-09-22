@@ -1,0 +1,36 @@
+{
+    "dfx": "0.15.0",
+    "output_env_file": ".env",
+    "defaults": {
+        "build": {
+            "packtool": "npm run --silent sources"
+        }
+    },
+    "canisters": {
+        "DIP721": {
+            "type": "motoko",
+            "main": "backend/Main/Main.mo"
+        },
+        "ledger": {
+            "type": "motoko",
+            "main": "backend/ledger/Canisters/Token.mo",
+            "candid": "backend/ledger/icrc1.did"
+        },
+        "storage": {
+            "type": "motoko",
+            "main": "backend/Storage/FileStorage.mo"
+        },
+        "frontend": {
+            "type": "assets",
+            "dependencies": [
+                "DIP721"
+            ],
+            "frontend": {
+                "entrypoint": "dist/index.html"
+            },
+            "source": [
+                "dist/"
+            ]
+        }
+    }
+}
