@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "setup": "npm i && dfx canister create DIP721 && dfx canister create ledger && dfx generate DIP721 && dfx deploy DIP721 && dfx generate frontend && dfx deploy frontend",
-    "refresh": "dfx generate DIP721 && dfx generate frontend && dfx deploy DIP721 && dfx deploy frontend",
-    "start": "run-p frontend backend",
+    "setup": "npm i && dfx canister create Main && dfx canister create ledger && dfx generate Main && dfx deploy Main",
+    "refresh": "dfx generate Main && dfx generate frontend && dfx deploy Main",
+    "start": "run-p backend",
     "frontend": "vite --port 3000",
     "backend": "mo-dev --generate --deploy -y",
     "build": "tsc && vite build",

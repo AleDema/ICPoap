@@ -27,7 +27,6 @@ import ExtNonFungible "../ext_v2_utils/ext/NonFungible";
 //EXTv2 SALE
 import Int64 "mo:base/Int64";
 import List "mo:base/List";
-import Encoding "mo:encoding/Binary";
 //Cap
 import Cap "mo:cap/Cap";
 import Queue "../ext_v2_utils/util/Queue";

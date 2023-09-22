@@ -27,7 +27,7 @@ import Int64 "mo:base/Int64";
 import Float "mo:base/Float";
 import Time "mo:base/Time";
 
-shared ({ caller }) actor class Dip721NFT() = Self {
+shared ({ caller }) actor class Main() = Self {
 
   type Event = {
     id : Text;
@@ -61,12 +61,12 @@ shared ({ caller }) actor class Dip721NFT() = Self {
     state : CouponStates;
     redeemer : ?Principal;
   };
-  stable var transactionId : Types.TransactionId = 0;
-  stable var nfts = List.nil<Types.Nft>();
+
   stable var custodian = caller;
   stable var custodians = List.make<Principal>(custodian);
   let { ihash; nhash; thash; phash; calcHash } = Map;
   stable let events = Map.new<Text, Event>(thash);
+  stable let collections = Map.new<Text, Event>(thash);
   stable let coupons = Map.new<Text, Coupon>(thash);
   stable var outstandingCouponsBalance = 0;
   let pthash : Map.HashUtils<(Principal, Text)> = (
@@ -87,13 +87,7 @@ shared ({ caller }) actor class Dip721NFT() = Self {
   custodians := List.push(Principal.fromText("lthbc-s7c4h-3oo2v-olnlk-kvil4-p34hi-26t5g-4ciyd-di65k-hbh5n-hae"), custodians);
   custodians := List.push(Principal.fromText("ongl2-c2ceb-mfxvy-63cc7-tmil7-xznc6-wmy2y-sqb6f-cs546-2l23t-wae"), custodians);
   custodians := List.push(Principal.fromText("iwnta-rdyti-ucuvq-j3ugn-ajdvd-o4c7b-7u7f3-xsfzp-rxbh6-fpbnk-sqe"), custodians);
-  stable var logo : Types.LogoResult = {
-    logo_type = "img";
-    data = "";
-  };
-  stable var name : Text = "ICP Italia Hub Badges";
-  stable var symbol : Text = "ICITA";
-  stable var maxLimit : Nat16 = 100;
+
   let CYCLE_AMOUNT : Nat = 1_000_000_000_000;
   let CKBTC_FEE : Nat = 10;
   let IS_PROD = true;
@@ -107,770 +101,185 @@ shared ({ caller }) actor class Dip721NFT() = Self {
     storage_canister_id := "5aui7-6qaaa-aaaap-qba2a-cai";
   };
 
-  ///////DIP721 INTERFACE///////////
-  let null_address : Principal = Principal.fromText("aaaaa-aa");
-
-  public query func balanceOfDip721(user : Principal) : async Nat64 {
-    return Nat64.fromNat(
-      List.size(
-        List.filter(nfts, func(token : Types.Nft) : Bool { token.owner == user })
-      )
-    );
-  };
-
-  public query func ownerOfDip721(token_id : Types.TokenId) : async Types.OwnerResult {
-    let item = List.find(nfts, func(token : Types.Nft) : Bool { token.id == token_id });
-    switch (item) {
-      case (null) {
-        return #Err(#InvalidTokenId);
-      };
-      case (?token) {
-        return #Ok(token.owner);
-      };
-    };
-  };
-
-  public shared ({ caller }) func safeTransferFromDip721(from : Principal, to : Principal, token_id : Types.TokenId) : async Types.TxReceipt {
-    if (to == null_address) {
-      return #Err(#ZeroAddress);
-    } else {
-      return transferFrom(from, to, token_id, caller);
-    };
-  };
-
-  public shared ({ caller }) func transferFromDip721(from : Principal, to : Principal, token_id : Types.TokenId) : async Types.TxReceipt {
-    return transferFrom(from, to, token_id, caller);
-  };
-
-  func transferFrom(from : Principal, to : Principal, token_id : Types.TokenId, caller : Principal) : Types.TxReceipt {
-    let item = List.find(nfts, func(token : Types.Nft) : Bool { token.id == token_id });
-    switch (item) {
-      case null {
-        return #Err(#InvalidTokenId);
-      };
-      case (?token) {
-        if (
-          caller != token.owner and not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })
-        ) {
-          return #Err(#Unauthorized);
-        } else if (Principal.notEqual(from, token.owner)) {
-          return #Err(#Other);
-        } else {
-          nfts := List.map(
-            nfts,
-            func(item : Types.Nft) : Types.Nft {
-              if (item.id == token.id) {
-                let update : Types.Nft = {
-                  owner = to;
-                  id = item.id;
-                  metadata = token.metadata;
-                };
-                return update;
-              } else {
-                return item;
-              };
-            },
-          );
-          transactionId += 1;
-          return #Ok(transactionId);
-        };
-      };
-    };
-  };
-
-  public query func supportedInterfacesDip721() : async [Types.InterfaceId] {
-    return [#TransferNotification, #Burn, #Mint];
-  };
-
-  public query func logoDip721() : async Types.LogoResult {
-    return logo;
-  };
-
-  public query func nameDip721() : async Text {
-    return name;
-  };
-
-  public query func symbolDip721() : async Text {
-    return symbol;
-  };
-
-  public query func totalSupplyDip721() : async Nat64 {
-    return Nat64.fromNat(
-      List.size(nfts)
-    );
-  };
-
-  public query func getMetadataDip721(token_id : Types.TokenId) : async Types.MetadataResult {
-    let item = List.find(nfts, func(token : Types.Nft) : Bool { token.id == token_id });
-    switch (item) {
-      case null {
-        return #Err(#InvalidTokenId);
-      };
-      case (?token) {
-        return #Ok(token.metadata);
-      };
-    };
-  };
-
-  public query func getMaxLimitDip721() : async Nat16 {
-    return maxLimit;
-  };
-
-  public func getMetadataForUserDip721(user : Principal) : async [Types.ExtendedMetadataResult] {
-    let items = List.filter(nfts, func(token : Types.Nft) : Bool { token.owner == user });
-    let res = List.map(
-      items,
-      func(item : Types.Nft) : Types.ExtendedMetadataResult {
-        return { token_id = item.id; metadata_desc = item.metadata };
-      },
-    );
-    return List.toArray(res);
-  };
-
-  public query func getTokenIdsForUserDip721(user : Principal) : async [Types.TokenId] {
-    //Debug.print(debug_show (user));
-    let items = List.filter(nfts, func(token : Types.Nft) : Bool { token.owner == user });
-    let tokenIds = List.map(items, func(item : Types.Nft) : Types.TokenId { item.id });
-    return List.toArray(tokenIds);
-  };
-
-  public query func getAllTokens() : async [Types.Nft] {
-    return List.toArray(nfts);
-  };
-
-  public shared ({ caller }) func mintDip721(to : Principal, metadata : Types.MetadataDesc) : async Types.MintReceipt {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #Err(#Unauthorized);
-    };
-    let newId = Nat64.fromNat(List.size(nfts));
-    let nft : Types.Nft = {
-      owner = to;
-      id = newId;
-      metadata = metadata;
-    };
-
-    nfts := List.push(nft, nfts);
-
-    transactionId += 1;
-    return #Ok({
-      token_id = newId;
-      id = transactionId;
-    });
-  };
-
-  type TokenMetadata = {
-    transferred_at : ?Nat64;
-    transferred_by : ?Principal;
-    owner : ?Principal;
-    operator : ?Principal;
-    approved_at : ?Nat64;
-    approved_by : ?Principal;
-    properties : [(Text, GenericValue)];
-    is_burned : Bool;
-    token_identifier : Nat;
-    burned_at : ?Nat64;
-    burned_by : ?Principal;
-    minted_at : Nat64;
-    minted_by : Principal;
-  };
-
-  type Vec = [(Text, GenericValue)];
-
-  type NftError = {
-    #UnauthorizedOperator;
-    #SelfTransfer;
-    #TokenNotFound;
-    #UnauthorizedOwner;
-    #SelfApprove;
-    #OperatorNotFound;
-    #ExistedNFT;
-    #OwnerNotFound;
-  };
-
-  type GenericValue = {
-    #Nat64Content : Nat64;
-    #Nat32Content : Nat32;
-    #BoolContent : Bool;
-    #Nat8Content : Nat8;
-    #Int64Content : Int64;
-    #IntContent : Int;
-    #NatContent : Nat;
-    #Nat16Content : Nat16;
-    #Int32Content : Int32;
-    #Int8Content : Int8;
-    #FloatContent : Float;
-    #Int16Content : Int16;
-    #BlobContent : Blob; //[Nat8];
-    #NestedContent : Vec;
-    #Principal : Principal;
-    #TextContent : Text;
-  };
-
-  type ManualReply = {
-    logo : ?Text;
-    name : ?Text;
-    created_at : Nat64;
-    upgraded_at : Nat64;
-    custodians : [Principal];
-    symbol : ?Text;
-  };
-
-  public shared ({ caller }) func transfer(to : Principal, token_identifier : Types.TokenId) : async Types.Result<Nat, NftError> {
-    let item = List.find(nfts, func(token : Types.Nft) : Bool { token.id == token_identifier });
-    switch (item) {
-      case null {
-        return #Err(#TokenNotFound);
-      };
-      case (?token) {
-        if (
-          caller != token.owner and not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })
-        ) {
-          return #Err(#UnauthorizedOwner);
-        } else if (Principal.notEqual(caller, token.owner)) {
-          return #Err(#UnauthorizedOwner);
-        } else {
-          nfts := List.map(
-            nfts,
-            func(item : Types.Nft) : Types.Nft {
-              if (item.id == token.id) {
-                let update : Types.Nft = {
-                  owner = to;
-                  id = item.id;
-                  metadata = token.metadata;
-                };
-                return update;
-              } else {
-                return item;
-              };
-            },
-          );
-          transactionId += 1;
-          return #Ok(transactionId);
-        };
-      };
-    };
-  };
-
-  public query func ownerTokenMetadata(owner : Principal) : async Types.Result<[TokenMetadata], NftError> {
-    let items = List.filter(nfts, func(token : Types.Nft) : Bool { token.owner == owner });
-    let res = List.map(
-      items,
-      func(item : Types.Nft) : TokenMetadata {
-        var location : Types.MetadataVal = #TextContent("");
-        ignore Array.find<Types.MetadataKeyVal>(
-          item.metadata[0].key_val_data,
-          func(value : Types.MetadataKeyVal) : Bool {
-            if (Text.equal(value.key, "location")) {
-              location := value.val;
-              return true;
-            };
-            return false;
-          },
-        );
-        return {
-          // token_id = item.id;
-          // metadata_desc = item.metadata;
-          transferred_at = null;
-          transferred_by = null;
-          owner = ?item.owner;
-          operator = null;
-          approved_at = null;
-          approved_by = null;
-          properties = [
-            ("location", location),
-            ("thumbnail", location),
-            ("name", #TextContent("BWR23")),
-          ];
-          is_burned = false;
-          token_identifier = Nat64.toNat(item.id);
-          burned_at = null;
-          burned_by = null;
-          minted_at = 0;
-          minted_by = item.owner;
-        };
-      },
-    );
-    return #Ok(List.toArray(res));
-  };
-
-  public query func tokenMetadata(token_identifier : Types.TokenId) : async Types.Result<TokenMetadata, NftError> {
-    let item = List.find(nfts, func(token : Types.Nft) : Bool { token.id == token_identifier });
-    switch (item) {
-      case null {
-        return #Err(#TokenNotFound);
-      };
-      case (?token) {
-        return #Ok({
-
-          // token_id = item.id;
-          // metadata_desc = item.metadata;
-          transferred_at = null;
-          transferred_by = null;
-          owner = ?token.owner;
-          operator = null;
-          approved_at = null;
-          approved_by = null;
-          properties = [
-            ("location", #TextContent("https://vzb3d-qyaaa-aaaam-qaaqq-cai.raw.ic0.app/thumbnails/0001.png")),
-            ("thumbnail", #TextContent("https://vzb3d-qyaaa-aaaam-qaaqq-cai.raw.ic0.app/thumbnails/0001.png")),
-            ("name", #TextContent("BWR23")),
-          ];
-          is_burned = false;
-          token_identifier = Nat64.toNat(token.id);
-          burned_at = null;
-          burned_by = null;
-          minted_at = 0;
-          minted_by = token.owner;
-        });
-      };
-    };
-  };
-
-  //// COUPONS //////////////////////
-
-  public shared ({ caller }) func createCoupon(couponData : Coupon) : async Result.Result<Text, Text> {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #err("Not authorized");
-    };
-
-    if (couponData.amount <= 0) return #err("Invalid Amount");
-
-    let ledger_canister : ICRCTypes.TokenInterface = actor (icrc_principal);
-    let balance = await ledger_canister.icrc1_balance_of({
-      owner = Principal.fromActor(Self);
-      subaccount = null;
-    });
-
-    if (balance < couponData.amount + CKBTC_FEE + outstandingCouponsBalance) return #err("Not enough balance");
-
-    outstandingCouponsBalance := outstandingCouponsBalance + couponData.amount + CKBTC_FEE;
-    canister_status := {
-      canister_status with
-      nft_ledger_balance = balance;
-      outstanding_balance = outstandingCouponsBalance;
-    };
-
-    let fuzz = Fuzz.Fuzz();
-    let couponId = fuzz.text.randomAlphanumeric(16);
-    Debug.print(debug_show (couponData));
-    Debug.print(debug_show (outstandingCouponsBalance));
-    ignore Map.put(coupons, thash, couponId, { couponData with id = couponId });
-
-    return #ok(couponId);
-  };
-
-  public shared ({ caller }) func getCoupons() : async Result.Result<[Coupon], Text> {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #err("Not Authorized");
-    };
-    let iter = Map.vals<Text, Coupon>(coupons);
-    return #ok(Iter.toArray(iter));
-  };
-
-  public query func getCoupon(couponId : Text) : async Result.Result<Coupon, Text> {
-    switch (Map.get(coupons, thash, couponId)) {
-      case (?coupon) {
-        return #ok(coupon);
-      };
-      case (null) {
-        return #err("No such coupon");
-      };
-    };
-  };
-
-  private func changeCouponState(couponId : Text, redeemer : ?Principal, newState : { #redeemed; #active }) : Result.Result<Text, Text> {
-    switch (Map.get(coupons, thash, couponId)) {
-      case (?coupon) {
-        ignore Map.put(coupons, thash, couponId, { coupon with state = newState; redeemer = redeemer });
-        return #ok("state changed");
-      };
-      case (null) {
-        return #err("No such coupon");
-      };
-    };
-  };
-
-  private func redeemCouponInternal(couponId : Text, redeemer : Principal) : async Result.Result<Text, Text> {
-    if (isAnonymous(caller)) return #err("For your safety you can't withdraw to an anonymous principal, login first");
-    var amount = 0;
-    switch (Map.get(coupons, thash, couponId)) {
-      case (?coupon) {
-        if (coupon.state == #frozen) return #err("Coupon is frozen and can't be redeemed");
-        if (coupon.state == #redeemed) return #err("Coupon has already been redeemed");
-        //This is done to prevent multiple users from redeeming same coupon due to icrc1_transfer being an async and possibly cross subnet call
-        ignore Map.put(coupons, thash, couponId, { coupon with state = #redeemed; redeemer = ?redeemer });
-        amount := coupon.amount;
-      };
-      case (null) {
-        return #err("No such coupon");
-      };
-    };
-    //TODO check timeframe
-
-    //ledger transfer
-    //for whatever reason Motoko uses #ok instead of #Ok for variants so return type changes based on how the icrc1 canister is implemented
-    // fix correctly by updating ICRC1 motoko ledger
-    if (Text.equal(icrc_principal, "mxzaz-hqaaa-aaaar-qaada-cai")) {
-      let ledger_canister : ICRCTypes.RustTokenInterface = actor (icrc_principal);
-      let res = await ledger_canister.icrc1_transfer({
-        to = { owner = redeemer; subaccount = null };
-        fee = ?CKBTC_FEE;
-        memo = null;
-        from_subaccount = null;
-        created_at_time = null;
-        amount = amount //decimals
-      });
-      Debug.print(debug_show (res));
-      switch (res) {
-        case (#Ok(n)) {
-          outstandingCouponsBalance := outstandingCouponsBalance - amount - CKBTC_FEE;
-          ignore update_status(#update_ledger_balance);
-          switch (Map.get(coupons, thash, couponId)) {
-            case (?coupon) {
-              //ignore Map.put(coupons, thash, couponId, { coupon with state = #redeemed; redeemer = ?redeemer });
-            };
-            case (null) {
-              return #err("No such coupon");
-            };
-          };
-          return #ok("Success! check your wallet");
-        };
-        case (#Err(#GenericError(e))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error GenericError!");
-        };
-        case (#Err(#TemporarilyUnavailable(e))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error TemporarilyUnavailable!");
-        };
-        case (#Err(#BadBurn(e))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error BadBurn!");
-        };
-        case (#Err(#Duplicate(e))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error Duplicate!");
-        };
-        case (#Err(#BadFee(e))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error BadFee!");
-        };
-        case (#Err(#CreatedInFuture(e))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error CreatedInFuture!");
-        };
-        case (#Err(#TooOld(e))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error TooOld!");
-        };
-        case (#Err(#InsufficientFunds(balance))) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error InsufficientFunds! ");
-        };
-        case (#Err(_)) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error redeeming!");
-        };
-      };
-
-    } else {
-      let ledger_canister = actor (icrc_principal) : ICRCTypes.TokenInterface;
-      let res = await ledger_canister.icrc1_transfer({
-        to = { owner = redeemer; subaccount = null };
-        fee = ?CKBTC_FEE;
-        memo = null;
-        from_subaccount = null;
-        created_at_time = null;
-        amount = amount //decimals
-      });
-      Debug.print(debug_show (res));
-      switch (res) {
-        case (#ok(n)) {
-          outstandingCouponsBalance := outstandingCouponsBalance - amount - CKBTC_FEE;
-          ignore update_status(#update_ledger_balance);
-          switch (Map.get(coupons, thash, couponId)) {
-            case (?coupon) {
-              //ignore Map.put(coupons, thash, couponId, { coupon with state = #redeemed; redeemer = ?redeemer });
-            };
-            case (null) {
-              return #err("No such coupon");
-            };
-          };
-          return #ok("Success! check your wallet");
-        };
-        case (#err(_)) {
-          ignore changeCouponState(couponId, null, #active);
-          return #err("Error!");
-        };
-      };
-    };
-  };
-
-  public shared ({ caller }) func redeemCoupon(couponId : Text) : async Result.Result<Text, Text> {
-    return await redeemCouponInternal(couponId, caller);
-  };
-
-  public shared ({ caller }) func redeemCouponToPrincipal(couponId : Text, principal : Principal) : async Result.Result<Text, Text> {
-    return await redeemCouponInternal(couponId, principal);
-  };
-
-  public shared ({ caller }) func updateCouponState(couponId : Text, newState : { #active; #frozen }) : async Result.Result<Text, Text> {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #err("Not Authorized");
-    };
-    switch (Map.get(coupons, thash, couponId)) {
-      case (?coupon) {
-        if (coupon.state == #redeemed) return #err("Coupon has already been redeemed");
-
-        ignore Map.remove(coupons, thash, couponId);
-        ignore Map.put(coupons, thash, couponId, { coupon with state = newState });
-        return #ok("Coupon Updated");
-      };
-      case (null) {
-        return #err("No coupon with this ID");
-      };
-    };
-  };
-
-  public shared ({ caller }) func deleteCoupon(couponId : Text) : async Result.Result<Text, Text> {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #err("Not Authorized");
-    };
-    switch (Map.get(coupons, thash, couponId)) {
-      case (?coupon) {
-        if (coupon.state == #redeemed) return #err("Coupon has already been redeemed");
-
-        ignore Map.remove(coupons, thash, couponId);
-        outstandingCouponsBalance := outstandingCouponsBalance - coupon.amount - CKBTC_FEE;
-        canister_status := {
-          canister_status with
-          outstanding_balance = outstandingCouponsBalance;
-        };
-        return #ok("Coupon Deleted");
-      };
-      case (null) {
-        return #err("No coupon with this ID");
-      };
-    };
-  };
-
-  //// EVENTS //////////////////////
-
-  private func getEventMetadata(name : Text, description : Text, fileType : Text, url : Text, eventId : Text, nftId : Nat) : Types.MetadataDesc {
-    return [{
-      purpose = #Rendered;
-      key_val_data = [
-        {
-          key = "name";
-          val = #TextContent(name);
-        },
-        {
-          key = "description";
-          val = #TextContent(description);
-        },
-        {
-          key = "contentType";
-          val = #TextContent(fileType);
-        },
-        {
-          key = "locationType";
-          val = #TextContent("url");
-        },
-        {
-          key = "location";
-          val = #TextContent(url);
-        },
-        {
-          key = "eventId";
-          val = #TextContent(eventId);
-        },
-        {
-          key = "nftId";
-          val = #NatContent(nftId);
-        },
-
-      ];
-      data = Blob.fromArray([]);
-    }];
-  };
-
-  public shared ({ caller }) func createEventNft(eventData : Event) : async Result.Result<Text, Text> {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #err("Not authorized");
-    };
-
-    let fuzz = Fuzz.Fuzz();
-    let eventId = fuzz.text.randomAlphanumeric(16);
-    Debug.print(debug_show (eventData));
-    let event = {
-      eventData with id = eventId;
-      creationDate = Time.now();
-      transactionId = 0;
-    };
-    Debug.print(debug_show (event));
-    ignore Map.put(events, thash, eventId, event);
-    ignore update_status(#update_cycle_balance);
-    return #ok(eventId);
-  };
-
-  public shared ({ caller }) func getEvents() : async Result.Result<[Event], Text> {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #err("Not Authorized");
-    };
-    let iter = Map.vals<Text, Event>(events);
-    return #ok(Iter.toArray(iter));
-  };
-
-  public query func getEvent(eventId : Text) : async Result.Result<Event, Text> {
-    switch (Map.get(events, thash, eventId)) {
-      case (?event) {
-        return #ok(event);
-      };
-      case (null) {
-        return #err("No such event");
-      };
-    };
-  };
-
-  public shared ({ caller }) func updateEventState(eventId : Text, newState : { #active; #ended; #inactive }) : async Result.Result<Text, Text> {
-    if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
-      return #err("Not Authorized");
-    };
-    switch (Map.get(events, thash, eventId)) {
-      case (?event) {
-        //ignore Map.remove(coupons, thash, couponId);
-        Map.set(events, thash, eventId, { event with state = newState });
-        return #ok("Event Updated");
-      };
-      case (null) {
-        return #err("No event with this ID");
-      };
-    };
-  };
-
-  public shared ({ caller }) func claimEventNftToAddress(id : Text, to : Principal) : async Result.Result<Text, Text> {
-
-    // get event metadata
-    var nftName = "ERROR";
-    var description = "ERROR";
-    var nftType = "ERROR";
-    var nftUrl = "ERROR";
-    var eventId = "ERROR";
-    var txId = 0;
-    var eventState : { #active; #ended; #inactive } = #ended;
-    switch (Map.get(events, thash, id)) {
-      case (?event) {
-        nftName := event.nftName;
-        nftType := event.nftType;
-        nftUrl := event.nftUrl;
-        description := event.description;
-        eventState := event.state;
-        eventId := event.id;
-        //TODO check timeframe
-
-        switch (eventState) {
-          case (#active) {
-            // check if user has already redeemed
-            let check = Map.get(eventsByPrincipal, pthash, (to, id));
-            switch (check) {
-              case (?exists) {
-                return #err("Already redeemed");
-              };
-              case (null) {
-                //update txid
-                ignore Map.put(events, thash, eventId, { event with transactionId = event.transactionId + 1 });
-                txId := event.transactionId + 1;
-
-                let newId = Nat64.fromNat(List.size(nfts));
-                let nft : Types.Nft = {
-                  owner = to;
-                  id = newId;
-                  metadata = getEventMetadata(nftName, description, nftType, nftUrl, eventId, txId);
-                };
-
-                nfts := List.push(nft, nfts);
-
-                transactionId += 1;
-                ignore Map.put(eventsByPrincipal, pthash, (to, id), newId);
-                return #ok(Nat64.toText(newId));
-              };
-            };
-          };
-          case (#ended) {
-            return #err("The event is over");
-          };
-          case (#inactive) {
-            return #err("The event hasn't started yet");
-          };
-        };
-      };
-      case (null) {
-        return #err("No such event");
-      };
-    };
-  };
-
-  public shared ({ caller }) func claimEventNft(id : Text) : async Result.Result<Text, Text> {
-
-    // get event metadata
-    var nftName = "ERROR";
-    var description = "ERROR";
-    var nftType = "ERROR";
-    var nftUrl = "ERROR";
-    var eventId = "ERROR";
-    var txId = 0;
-    var eventState : { #active; #ended; #inactive } = #ended;
-    switch (Map.get(events, thash, id)) {
-      case (?event) {
-        nftName := event.nftName;
-        nftType := event.nftType;
-        nftUrl := event.nftUrl;
-        description := event.description;
-        eventState := event.state;
-        eventId := event.id;
-        //TODO check timeframe
-
-        switch (eventState) {
-          case (#active) {
-            // check if user has already redeemed
-            let check = Map.get(eventsByPrincipal, pthash, (caller, id));
-            switch (check) {
-              case (?exists) {
-                return #err("Already redeemed");
-              };
-              case (null) {
-                //update txid
-                ignore Map.put(events, thash, eventId, { event with transactionId = event.transactionId + 1 });
-                txId := event.transactionId + 1;
-
-                let newId = Nat64.fromNat(List.size(nfts));
-                let nft : Types.Nft = {
-                  owner = caller;
-                  id = newId;
-                  metadata = getEventMetadata(nftName, description, nftType, nftUrl, eventId, txId);
-                };
-
-                nfts := List.push(nft, nfts);
-
-                transactionId += 1;
-                ignore Map.put(eventsByPrincipal, pthash, (caller, id), newId);
-                return #ok(Nat64.toText(newId));
-              };
-            };
-          };
-          case (#ended) {
-            return #err("The event is over");
-          };
-          case (#inactive) {
-            return #err("The event hasn't started yet");
-          };
-        };
-      };
-      case (null) {
-        return #err("No such event");
-      };
-    };
-  };
+  //// COLLECTIONS //////////////////////
+
+  // public shared ({ caller }) func createEventNft(eventData : Event) : async Result.Result<Text, Text> {
+  //   if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
+  //     return #err("Not authorized");
+  //   };
+
+  //   let fuzz = Fuzz.Fuzz();
+  //   let eventId = fuzz.text.randomAlphanumeric(16);
+  //   Debug.print(debug_show (eventData));
+  //   let event = {
+  //     eventData with id = eventId;
+  //     creationDate = Time.now();
+  //     transactionId = 0;
+  //   };
+  //   Debug.print(debug_show (event));
+  //   ignore Map.put(events, thash, eventId, event);
+  //   ignore update_status(#update_cycle_balance);
+  //   return #ok(eventId);
+  // };
+
+  // public shared ({ caller }) func getEvents() : async Result.Result<[Event], Text> {
+  //   if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
+  //     return #err("Not Authorized");
+  //   };
+  //   let iter = Map.vals<Text, Event>(events);
+  //   return #ok(Iter.toArray(iter));
+  // };
+
+  // public query func getEvent(eventId : Text) : async Result.Result<Event, Text> {
+  //   switch (Map.get(events, thash, eventId)) {
+  //     case (?event) {
+  //       return #ok(event);
+  //     };
+  //     case (null) {
+  //       return #err("No such event");
+  //     };
+  //   };
+  // };
+
+  // public shared ({ caller }) func updateEventState(eventId : Text, newState : { #active; #ended; #inactive }) : async Result.Result<Text, Text> {
+  //   if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
+  //     return #err("Not Authorized");
+  //   };
+  //   switch (Map.get(events, thash, eventId)) {
+  //     case (?event) {
+  //       //ignore Map.remove(coupons, thash, couponId);
+  //       Map.set(events, thash, eventId, { event with state = newState });
+  //       return #ok("Event Updated");
+  //     };
+  //     case (null) {
+  //       return #err("No event with this ID");
+  //     };
+  //   };
+  // };
+
+  // public shared ({ caller }) func claimEventNftToAddress(id : Text, to : Principal) : async Result.Result<Text, Text> {
+
+  //   // get event metadata
+  //   var nftName = "ERROR";
+  //   var description = "ERROR";
+  //   var nftType = "ERROR";
+  //   var nftUrl = "ERROR";
+  //   var eventId = "ERROR";
+  //   var txId = 0;
+  //   var eventState : { #active; #ended; #inactive } = #ended;
+  //   switch (Map.get(events, thash, id)) {
+  //     case (?event) {
+  //       nftName := event.nftName;
+  //       nftType := event.nftType;
+  //       nftUrl := event.nftUrl;
+  //       description := event.description;
+  //       eventState := event.state;
+  //       eventId := event.id;
+  //       //TODO check timeframe
+
+  //       switch (eventState) {
+  //         case (#active) {
+  //           // check if user has already redeemed
+  //           let check = Map.get(eventsByPrincipal, pthash, (to, id));
+  //           switch (check) {
+  //             case (?exists) {
+  //               return #err("Already redeemed");
+  //             };
+  //             case (null) {
+  //               //update txid
+  //               ignore Map.put(events, thash, eventId, { event with transactionId = event.transactionId + 1 });
+  //               txId := event.transactionId + 1;
+
+  //               let newId = Nat64.fromNat(List.size(nfts));
+  //               let nft : Types.Nft = {
+  //                 owner = to;
+  //                 id = newId;
+  //                 metadata = getEventMetadata(nftName, description, nftType, nftUrl, eventId, txId);
+  //               };
+
+  //               nfts := List.push(nft, nfts);
+
+  //               transactionId += 1;
+  //               ignore Map.put(eventsByPrincipal, pthash, (to, id), newId);
+  //               return #ok(Nat64.toText(newId));
+  //             };
+  //           };
+  //         };
+  //         case (#ended) {
+  //           return #err("The event is over");
+  //         };
+  //         case (#inactive) {
+  //           return #err("The event hasn't started yet");
+  //         };
+  //       };
+  //     };
+  //     case (null) {
+  //       return #err("No such event");
+  //     };
+  //   };
+  // };
+
+  // public shared ({ caller }) func claimEventNft(id : Text) : async Result.Result<Text, Text> {
+
+  //   // get event metadata
+  //   var nftName = "ERROR";
+  //   var description = "ERROR";
+  //   var nftType = "ERROR";
+  //   var nftUrl = "ERROR";
+  //   var eventId = "ERROR";
+  //   var txId = 0;
+  //   var eventState : { #active; #ended; #inactive } = #ended;
+  //   switch (Map.get(events, thash, id)) {
+  //     case (?event) {
+  //       nftName := event.nftName;
+  //       nftType := event.nftType;
+  //       nftUrl := event.nftUrl;
+  //       description := event.description;
+  //       eventState := event.state;
+  //       eventId := event.id;
+  //       //TODO check timeframe
+
+  //       switch (eventState) {
+  //         case (#active) {
+  //           // check if user has already redeemed
+  //           let check = Map.get(eventsByPrincipal, pthash, (caller, id));
+  //           switch (check) {
+  //             case (?exists) {
+  //               return #err("Already redeemed");
+  //             };
+  //             case (null) {
+  //               //update txid
+  //               ignore Map.put(events, thash, eventId, { event with transactionId = event.transactionId + 1 });
+  //               txId := event.transactionId + 1;
+
+  //               let newId = Nat64.fromNat(List.size(nfts));
+  //               let nft : Types.Nft = {
+  //                 owner = caller;
+  //                 id = newId;
+  //                 metadata = getEventMetadata(nftName, description, nftType, nftUrl, eventId, txId);
+  //               };
+
+  //               nfts := List.push(nft, nfts);
+
+  //               transactionId += 1;
+  //               ignore Map.put(eventsByPrincipal, pthash, (caller, id), newId);
+  //               return #ok(Nat64.toText(newId));
+  //             };
+  //           };
+  //         };
+  //         case (#ended) {
+  //           return #err("The event is over");
+  //         };
+  //         case (#inactive) {
+  //           return #err("The event hasn't started yet");
+  //         };
+  //       };
+  //     };
+  //     case (null) {
+  //       return #err("No such event");
+  //     };
+  //   };
+  // };
 
   /////////////////ADMIN////////////////////////////////////
 
@@ -1137,4 +546,232 @@ shared ({ caller }) actor class Dip721NFT() = Self {
     };
     return false;
   };
+
+  //// COUPONS //////////////////////
+
+  // public shared ({ caller }) func createCoupon(couponData : Coupon) : async Result.Result<Text, Text> {
+  //   if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
+  //     return #err("Not authorized");
+  //   };
+
+  //   if (couponData.amount <= 0) return #err("Invalid Amount");
+
+  //   let ledger_canister : ICRCTypes.TokenInterface = actor (icrc_principal);
+  //   let balance = await ledger_canister.icrc1_balance_of({
+  //     owner = Principal.fromActor(Self);
+  //     subaccount = null;
+  //   });
+
+  //   if (balance < couponData.amount + CKBTC_FEE + outstandingCouponsBalance) return #err("Not enough balance");
+
+  //   outstandingCouponsBalance := outstandingCouponsBalance + couponData.amount + CKBTC_FEE;
+  //   canister_status := {
+  //     canister_status with
+  //     nft_ledger_balance = balance;
+  //     outstanding_balance = outstandingCouponsBalance;
+  //   };
+
+  //   let fuzz = Fuzz.Fuzz();
+  //   let couponId = fuzz.text.randomAlphanumeric(16);
+  //   Debug.print(debug_show (couponData));
+  //   Debug.print(debug_show (outstandingCouponsBalance));
+  //   ignore Map.put(coupons, thash, couponId, { couponData with id = couponId });
+
+  //   return #ok(couponId);
+  // };
+
+  // public shared ({ caller }) func getCoupons() : async Result.Result<[Coupon], Text> {
+  //   if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
+  //     return #err("Not Authorized");
+  //   };
+  //   let iter = Map.vals<Text, Coupon>(coupons);
+  //   return #ok(Iter.toArray(iter));
+  // };
+
+  // public query func getCoupon(couponId : Text) : async Result.Result<Coupon, Text> {
+  //   switch (Map.get(coupons, thash, couponId)) {
+  //     case (?coupon) {
+  //       return #ok(coupon);
+  //     };
+  //     case (null) {
+  //       return #err("No such coupon");
+  //     };
+  //   };
+  // };
+
+  // private func changeCouponState(couponId : Text, redeemer : ?Principal, newState : { #redeemed; #active }) : Result.Result<Text, Text> {
+  //   switch (Map.get(coupons, thash, couponId)) {
+  //     case (?coupon) {
+  //       ignore Map.put(coupons, thash, couponId, { coupon with state = newState; redeemer = redeemer });
+  //       return #ok("state changed");
+  //     };
+  //     case (null) {
+  //       return #err("No such coupon");
+  //     };
+  //   };
+  // };
+
+  // private func redeemCouponInternal(couponId : Text, redeemer : Principal) : async Result.Result<Text, Text> {
+  //   if (isAnonymous(caller)) return #err("For your safety you can't withdraw to an anonymous principal, login first");
+  //   var amount = 0;
+  //   switch (Map.get(coupons, thash, couponId)) {
+  //     case (?coupon) {
+  //       if (coupon.state == #frozen) return #err("Coupon is frozen and can't be redeemed");
+  //       if (coupon.state == #redeemed) return #err("Coupon has already been redeemed");
+  //       //This is done to prevent multiple users from redeeming same coupon due to icrc1_transfer being an async and possibly cross subnet call
+  //       ignore Map.put(coupons, thash, couponId, { coupon with state = #redeemed; redeemer = ?redeemer });
+  //       amount := coupon.amount;
+  //     };
+  //     case (null) {
+  //       return #err("No such coupon");
+  //     };
+  //   };
+  //   //TODO check timeframe
+
+  //   //ledger transfer
+  //   //for whatever reason Motoko uses #ok instead of #Ok for variants so return type changes based on how the icrc1 canister is implemented
+  //   // fix correctly by updating ICRC1 motoko ledger
+  //   if (Text.equal(icrc_principal, "mxzaz-hqaaa-aaaar-qaada-cai")) {
+  //     let ledger_canister : ICRCTypes.RustTokenInterface = actor (icrc_principal);
+  //     let res = await ledger_canister.icrc1_transfer({
+  //       to = { owner = redeemer; subaccount = null };
+  //       fee = ?CKBTC_FEE;
+  //       memo = null;
+  //       from_subaccount = null;
+  //       created_at_time = null;
+  //       amount = amount //decimals
+  //     });
+  //     Debug.print(debug_show (res));
+  //     switch (res) {
+  //       case (#Ok(n)) {
+  //         outstandingCouponsBalance := outstandingCouponsBalance - amount - CKBTC_FEE;
+  //         ignore update_status(#update_ledger_balance);
+  //         switch (Map.get(coupons, thash, couponId)) {
+  //           case (?coupon) {
+  //             //ignore Map.put(coupons, thash, couponId, { coupon with state = #redeemed; redeemer = ?redeemer });
+  //           };
+  //           case (null) {
+  //             return #err("No such coupon");
+  //           };
+  //         };
+  //         return #ok("Success! check your wallet");
+  //       };
+  //       case (#Err(#GenericError(e))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error GenericError!");
+  //       };
+  //       case (#Err(#TemporarilyUnavailable(e))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error TemporarilyUnavailable!");
+  //       };
+  //       case (#Err(#BadBurn(e))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error BadBurn!");
+  //       };
+  //       case (#Err(#Duplicate(e))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error Duplicate!");
+  //       };
+  //       case (#Err(#BadFee(e))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error BadFee!");
+  //       };
+  //       case (#Err(#CreatedInFuture(e))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error CreatedInFuture!");
+  //       };
+  //       case (#Err(#TooOld(e))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error TooOld!");
+  //       };
+  //       case (#Err(#InsufficientFunds(balance))) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error InsufficientFunds! ");
+  //       };
+  //       case (#Err(_)) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error redeeming!");
+  //       };
+  //     };
+
+  //   } else {
+  //     let ledger_canister = actor (icrc_principal) : ICRCTypes.TokenInterface;
+  //     let res = await ledger_canister.icrc1_transfer({
+  //       to = { owner = redeemer; subaccount = null };
+  //       fee = ?CKBTC_FEE;
+  //       memo = null;
+  //       from_subaccount = null;
+  //       created_at_time = null;
+  //       amount = amount //decimals
+  //     });
+  //     Debug.print(debug_show (res));
+  //     switch (res) {
+  //       case (#ok(n)) {
+  //         outstandingCouponsBalance := outstandingCouponsBalance - amount - CKBTC_FEE;
+  //         ignore update_status(#update_ledger_balance);
+  //         switch (Map.get(coupons, thash, couponId)) {
+  //           case (?coupon) {
+  //             //ignore Map.put(coupons, thash, couponId, { coupon with state = #redeemed; redeemer = ?redeemer });
+  //           };
+  //           case (null) {
+  //             return #err("No such coupon");
+  //           };
+  //         };
+  //         return #ok("Success! check your wallet");
+  //       };
+  //       case (#err(_)) {
+  //         ignore changeCouponState(couponId, null, #active);
+  //         return #err("Error!");
+  //       };
+  //     };
+  //   };
+  // };
+
+  // public shared ({ caller }) func redeemCoupon(couponId : Text) : async Result.Result<Text, Text> {
+  //   return await redeemCouponInternal(couponId, caller);
+  // };
+
+  // public shared ({ caller }) func redeemCouponToPrincipal(couponId : Text, principal : Principal) : async Result.Result<Text, Text> {
+  //   return await redeemCouponInternal(couponId, principal);
+  // };
+
+  // public shared ({ caller }) func updateCouponState(couponId : Text, newState : { #active; #frozen }) : async Result.Result<Text, Text> {
+  //   if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
+  //     return #err("Not Authorized");
+  //   };
+  //   switch (Map.get(coupons, thash, couponId)) {
+  //     case (?coupon) {
+  //       if (coupon.state == #redeemed) return #err("Coupon has already been redeemed");
+
+  //       ignore Map.remove(coupons, thash, couponId);
+  //       ignore Map.put(coupons, thash, couponId, { coupon with state = newState });
+  //       return #ok("Coupon Updated");
+  //     };
+  //     case (null) {
+  //       return #err("No coupon with this ID");
+  //     };
+  //   };
+  // };
+
+  // public shared ({ caller }) func deleteCoupon(couponId : Text) : async Result.Result<Text, Text> {
+  //   if (not List.some(custodians, func(custodian : Principal) : Bool { custodian == caller })) {
+  //     return #err("Not Authorized");
+  //   };
+  //   switch (Map.get(coupons, thash, couponId)) {
+  //     case (?coupon) {
+  //       if (coupon.state == #redeemed) return #err("Coupon has already been redeemed");
+
+  //       ignore Map.remove(coupons, thash, couponId);
+  //       outstandingCouponsBalance := outstandingCouponsBalance - coupon.amount - CKBTC_FEE;
+  //       canister_status := {
+  //         canister_status with
+  //         outstanding_balance = outstandingCouponsBalance;
+  //       };
+  //       return #ok("Coupon Deleted");
+  //     };
+  //     case (null) {
+  //       return #err("No coupon with this ID");
+  //     };
+  //   };
+  // };
 };

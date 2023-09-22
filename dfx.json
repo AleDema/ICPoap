@@ -7,30 +7,18 @@
         }
     },
     "canisters": {
-        "DIP721": {
+        "Main": {
             "type": "motoko",
             "main": "backend/Main/Main.mo"
+        },
+        "ext_v2": {
+            "main": "backend/ext_v2/v2.mo",
+            "type": "motoko"
         },
         "ledger": {
             "type": "motoko",
             "main": "backend/ledger/Canisters/Token.mo",
             "candid": "backend/ledger/icrc1.did"
-        },
-        "storage": {
-            "type": "motoko",
-            "main": "backend/Storage/FileStorage.mo"
-        },
-        "frontend": {
-            "type": "assets",
-            "dependencies": [
-                "DIP721"
-            ],
-            "frontend": {
-                "entrypoint": "dist/index.html"
-            },
-            "source": [
-                "dist/"
-            ]
         }
     }
 }
